@@ -1,0 +1,8 @@
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+*.log
+*.jsonl
+.DS_Store

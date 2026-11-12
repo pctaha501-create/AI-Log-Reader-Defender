@@ -24,6 +24,18 @@ func TestReadJSONLNormalizesAndPreservesRaw(t *testing.T) {
 	}
 }
 
+func TestReadJSONLAcceptsUTF8BOM(t *testing.T) {
+	input := "\uFEFF" + `{"timestamp":"2026-11-12T10:00:00Z","event_id":"4625","message":"failed to log on"}` + "\n"
+
+	events, err := ReadJSONL(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].EventID != "4625" {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+}
+
 func TestReadJSONLRejectsMalformedLine(t *testing.T) {
 	if _, err := ReadJSONL(strings.NewReader("not-json\n")); err == nil {
 		t.Fatal("expected parse error")

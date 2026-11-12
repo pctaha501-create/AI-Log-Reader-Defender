@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/pctaha501-create/AI-Log-Reader-Defender/internal/analysis"
@@ -38,7 +39,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Usage: ald <version|analyze|collect|listen>")
 	fmt.Fprintln(os.Stderr, "  analyze --input events.log [--format auto] [--ai ollama --model NAME] [--json]")
 	fmt.Fprintln(os.Stderr, "  collect --since 1h --out events.jsonl")
-	fmt.Fprintln(os.Stderr, "  listen --addr 0.0.0.0:5514 --protocol udp --format syslog --out network.jsonl")
+	fmt.Fprintln(os.Stderr, "  listen --addr 0.0.0.0:5514 --protocol udp --format syslog --allow 192.0.2.10,192.0.2.0/24 --out network.jsonl")
 }
 func runAnalyze(args []string) {
 	fs := flag.NewFlagSet("analyze", flag.ExitOnError)
@@ -98,6 +99,7 @@ func runListen(args []string) {
 	protocol := fs.String("protocol", "udp", "transport: udp or tcp")
 	format := fs.String("format", "syslog", "message format: syslog, cef, or leef")
 	out := fs.String("out", "network-events.jsonl", "append received events to this JSONL file")
+	allow := fs.String("allow", "", "optional comma-separated sender IPs/CIDRs; unmatched senders are dropped")
 	_ = fs.Parse(args)
 	f, err := os.OpenFile(*out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil { fatal(err) }
@@ -105,6 +107,8 @@ func runListen(args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	fmt.Printf("Listening for %s/%s on %s; writing local events to %s (Ctrl+C to stop)\n", *protocol, *format, *addr, *out)
-	if err := collector.ListenNetwork(ctx, f, *addr, *protocol, *format, os.Stderr); err != nil { fatal(err) }
+	var senders []string
+	if strings.TrimSpace(*allow) != "" { senders = strings.Split(*allow, ",") }
+	if err := collector.ListenNetworkWithAllowlist(ctx, f, *addr, *protocol, *format, senders, os.Stderr); err != nil { fatal(err) }
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(1) }

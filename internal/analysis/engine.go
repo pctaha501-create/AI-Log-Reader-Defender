@@ -55,6 +55,7 @@ func AnalyzeWithOptions(events []model.Event, opts Options) model.Report {
  r.Findings=append(r.Findings,correlate(events)...)
  r.Findings=append(r.Findings,analyzeNetwork(events)... )
  r.Findings=append(r.Findings,analyzeBehavior(events)... )
+ r.Findings=append(r.Findings,analyzeVendorAdapters(events)... )
  sort.SliceStable(r.Findings,func(i,j int)bool { if severityRank(r.Findings[i].Severity)!=severityRank(r.Findings[j].Severity){return severityRank(r.Findings[i].Severity)>severityRank(r.Findings[j].Severity)}; if r.Findings[i].RuleID!=r.Findings[j].RuleID{return r.Findings[i].RuleID<r.Findings[j].RuleID}; return r.Findings[i].ID<r.Findings[j].ID })
  r.AIAnalysis = buildOfflineAnalysis(events, r.Findings)
  return r

@@ -1,8 +1,21 @@
 # AI Log Reader & Defender
 
-Cross-platform, local-first security log collection and analysis for **Windows 10/11 x64** and **Linux x64**. Written in Go. The core engine uses explainable rules; optional local Ollama adds natural-language analysis without sending logs to a cloud service.
+Cross-platform, fully offline security log collection and analysis for **Windows 10/11 x64** and **Linux x64**. Written in Go. No Ollama, Python, API key, cloud account, network connection, or separately downloaded model is required.
 
-## Included capabilities
+## Built-in intelligence
+
+The executable contains its own lightweight analysis engine. It combines explainable security rules, event correlation, suspicious command-pattern recognition, and statistical event-volume anomaly detection. Analysis runs automatically as part of every report; there is no AI setup step.
+
+- Authentication failures, malware/quarantine indicators, event-log clearing, account and privilege changes.
+- Firewall policy changes, disabled protection, blocked traffic and suspected port scans.
+- Suspicious PowerShell encoded commands and download/execute patterns.
+- Suspicious use of common Windows administration binaries such as Certutil, MSHTA, Regsvr32, BITSAdmin and Rundll32.
+- Unusual event-volume spikes across observed time buckets.
+- A local summary with evidence references and suggested investigation steps.
+
+This is an embedded, explainable rules-and-statistics engine, **not a large language model or a pretrained neural network**. It does not invent explanations from natural language. It is designed to be small, deterministic, private, and usable on ordinary computers without GPU acceleration. Findings are triage signals, not proof of compromise.
+
+## Collection and supported formats
 
 - Automatic detection: JSONL, Syslog RFC 3164/5424, CEF, LEEF, recognizable CSV, generic key/value and plain text.
 - Vendor/device fingerprinting for a broad set of network and endpoint products. Unknown brands and fields are preserved; fingerprinting is heuristic, not exhaustive.
@@ -10,15 +23,9 @@ Cross-platform, local-first security log collection and analysis for **Windows 1
 - LAN receiver for UDP and newline-framed TCP Syslog/CEF/LEEF, with optional sender IP/CIDR allowlist, bounded TCP frames and connection cap.
 - Windows event collection from Security, System, Application, Defender, Windows Firewall and PowerShell channels.
 - Linux journald plus recent common authentication, system, kernel, UFW and audit log files when readable.
-- Explainable detections for authentication failures, malware/quarantine indicators, event-log clearing, account/privilege changes, firewall policy changes, blocked traffic and suspected scans.
-- Optional offline analysis with an already-installed local Ollama model.
 - GitHub Actions tests, static analysis, Windows/Linux x64 builds and smoke tests.
 
-## Limitations
-
-This is an initial security-triage utility, not antivirus, EDR, SIEM or proof that a device is safe. Built-in rules are deterministic; there is no pretrained classifier. Ollama is optional and not bundled or trained by this project. Its output is advisory.
-
-Standard formats provide broad multi-vendor compatibility, but proprietary or binary exports require a documented adapter or sanitized sample-based validation. An unmanaged Ethernet hub/switch usually produces no security logs. SNMP telemetry/traps are not Syslog and are not collected by this listener.
+Proprietary or binary exports require a documented adapter or sanitized sample-based validation. An unmanaged Ethernet hub/switch usually produces no security logs. SNMP telemetry/traps are not Syslog and are not collected by this listener.
 
 ## Download
 
@@ -42,21 +49,13 @@ Some event channels require an elevated terminal or appropriate local permission
 
 The collector uses journalctl and recent common log files when readable. File-based collection uses file modification time as a coarse lookback filter; exact per-event timestamps remain in the original log lines.
 
-## Optional local AI (Ollama)
-
-Start Ollama and make sure a compatible chat model is already installed:
-
-    ald analyze --input firewall.log --ai ollama --model qwen3-coder:30b
-
-The default endpoint is `http://127.0.0.1:11434`; non-loopback endpoints are rejected. No API key, cloud service or model download is used. AI output is advisory. Log contents are treated as untrusted evidence, not instructions.
-
 ## Receive network-device logs
 
 Configure a router, managed switch, VPN gateway, IDS/IPS or firewall to forward Syslog/CEF/LEEF to a trusted LAN host:
 
     ald listen --addr 0.0.0.0:5514 --protocol udp --format syslog --allow 192.0.2.10,192.0.2.0/24 --out network-events.jsonl
 
-Omit `--allow` only if the host firewall independently restricts the listener to trusted senders. Use `--protocol tcp` for newline-framed TCP. TCP RFC 6587 octet-counting is not implemented. Never expose the listener to the public Internet; UDP delivery is not guaranteed.
+Omit --allow only if the host firewall independently restricts the listener to trusted senders. Use --protocol tcp for newline-framed TCP. TCP RFC 6587 octet-counting is not implemented. Never expose the listener to the public Internet; UDP delivery is not guaranteed.
 
 ## Supported formats
 
@@ -70,11 +69,12 @@ Omit `--allow` only if the host firewall independently restricts the listener to
 
 ## Privacy and safety
 
-- No telemetry upload or cloud analysis.
-- Ollama is opt-in and loopback-only.
-- Collection is read-only; no remediation or system configuration changes.
+- No telemetry upload or cloud analysis; analysis works without network access.
+- No external AI runtime, model, or service.
+- Collection is read-only; no automatic remediation or system configuration changes.
 - Protect exported logs; they may contain usernames, IPs, hostnames and other sensitive data.
 - Findings can be false positives or miss threats. Preserve and inspect original evidence.
+- This is not a replacement for antivirus, EDR, SIEM, or professional incident response.
 
 ## Development
 

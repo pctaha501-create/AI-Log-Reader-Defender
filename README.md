@@ -1,73 +1,65 @@
 # AI Log Reader & Defender
 
-Local-first security log analysis for **Windows and Ubuntu/Linux**.
+Initial release track: Windows 10/11 x64 and Ubuntu/Linux x64. Local-first, read-only security-log triage utility written in Go. No Python runtime, third-party Go modules, cloud API, or downloaded model is required.
 
-**Current milestone: M0.1.** This repository contains a portable Go CLI/core with deterministic baseline detections. It is not yet a trained AI model or a production endpoint-protection product.
+Status: this is a command-line utility using deterministic, explainable rules. It is not a trained AI model, antivirus replacement, EDR, SIEM, or proof that a device is safe. Findings require human review. A graphical interface and machine-learning classifier are not included in this initial release.
 
-## GitHub-only build and test
+## Download without a development PC
 
-You do not need Go, a compiler, or a local development environment to build this project.
+GitHub Actions runs formatting checks, tests, static analysis, native builds, and smoke tests for Windows and Ubuntu/Linux. Open Actions, select the latest successful CI run, and download the Windows or Linux artifact. CI artifacts expire after 14 days. A version tag such as v0.2.0 publishes both binaries and SHA-256 checksums as a GitHub Release.
 
-GitHub Actions automatically runs the following on pushes to `main` and pull requests:
+## Windows PowerShell
 
-- `go test ./...`
-- `go vet ./...`
-- Native Windows x64 and Ubuntu/Linux x64 builds
-- Uploads both binaries as downloadable workflow artifacts
+    .\ald-windows-amd64.exe version
+    .\ald-windows-amd64.exe analyze --input .\testdata\sample-events.jsonl
+    .\ald-windows-amd64.exe collect --since 1h --out .\events.jsonl
+    .\ald-windows-amd64.exe analyze --input .\events.jsonl --json
 
-To run it manually, open the repository's **Actions** tab, choose **CI**, and select **Run workflow**. When the run finishes, open it and download the Windows or Linux artifact from **Artifacts**.
+Reading the Windows Security log may require an elevated terminal and suitable local permissions. Collection is read-only.
 
-To publish versioned binaries, push a tag such as `v0.1.0`. The release workflow tests and builds both platforms and attaches the binaries to a GitHub Release. You can also run the release workflow manually to build downloadable artifacts; publishing a Release happens only for a `v*` tag.
+## Ubuntu/Linux
 
-## Local build (optional)
+    chmod +x ./ald-linux-amd64
+    ./ald-linux-amd64 version
+    ./ald-linux-amd64 analyze --input ./testdata/sample-events.jsonl
+    ./ald-linux-amd64 collect --since 1h --out ./events.jsonl
+    ./ald-linux-amd64 analyze --input ./events.jsonl --json
+
+Linux collection reads journald using journalctl. The current user must have permission to read the relevant entries. Do not run as root unless access policy requires it.
+
+## Detection coverage
+
+- Repeated authentication failures (Windows IDs 4625, 4771, 4776) grouped by source IP or user within a 10-minute window.
+- Explicit malware, ransomware, and quarantine message indicators.
+- Event-log clearing indicators (Windows 1102 and System 104).
+- Account creation (Windows 4720).
+- Privileged group membership changes (Windows 4728, 4732, 4756).
+- Account deletion and group membership removal (Windows 4726, 4733, 4757).
+- Basic same-batch correlation: account creation followed by privileged membership change within 100 events.
+
+Coverage depends on available event fields and message text. This is not exhaustive threat detection. False positives and missed detections are possible.
+
+## JSONL input
+
+One JSON object per line. Common fields: timestamp, source, host, event_id, level, provider, message, user, source_ip. Unknown fields are retained in the raw map. UTF-8 BOM and blank lines are supported. See testdata/sample-events.jsonl.
+
+## Privacy and safety
+
+- No network listener, telemetry upload, cloud analysis, or automatic remediation.
+- Collectors only read logs and write the requested output file.
+- No process termination, file deletion, quarantine, firewall changes, or system configuration changes.
+- Logs may contain usernames, hostnames, IP addresses, and sensitive data. Store exports securely and redact before sharing.
+- A clean report does not prove the absence of compromise.
+
+## Development
 
 Requires Go 1.23 or newer:
 
-```sh
-go test ./...
-go vet ./...
-go build -o ald ./cmd/ald
-```
-
-Windows PowerShell:
-
-```powershell
-go build -o ald.exe ./cmd/ald
-```
-
-## Commands
-
-```sh
-ald version
-ald analyze --input events.jsonl
-ald analyze --input events.jsonl --json
-ald collect --since 1h --out events.jsonl
-```
-
-Input is JSON Lines (one JSON object per line). Preferred fields include `timestamp`, `source`, `host`, `event_id`, `level`, `provider`, `message`, `user`, and `source_ip`. Unknown fields are preserved in the raw event map.
-
-## Collection
-
-- Windows: read-only Security event collection through `wevtutil.exe`. Permissions and available events depend on the host.
-- Linux: read-only system journal collection through `journalctl`. Access depends on the current user's journal permissions.
-
-Collection does not change system settings or take remediation actions.
-
-## Architecture and safety
-
-- Shared Go core for normalization, deterministic detections, and conservative batch correlation.
-- Platform-specific collectors are isolated behind Go build tags.
-- No Python, third-party Go modules, cloud calls, or model downloads are required for the current milestone.
-- No public network listener, automatic process termination, quarantine, firewall changes, persistence, or other destructive response actions.
-- A rule match is a triage signal, not proof of compromise.
-- No claim of model training, LLM reasoning, exhaustive log coverage, or production readiness.
+    gofmt -w .
+    go test ./...
+    go vet ./...
+    go build ./cmd/ald
 
 ## Roadmap
 
-1. Expand and validate Windows and Linux event collectors.
-2. Add durable local storage, rotation, health checks, and a user interface.
-3. Develop an anomaly/classification engine with labeled evaluation and measured precision, recall, and F1.
-4. Optionally integrate a verified locally installed LLM without requiring cloud APIs.
-5. Add explicit, auditable, reversible response workflows that always require user approval.
-
-MIT License.
+Expand and validate native event collection; add versioned rule packs and sanitized real-world fixtures; add local persistence and a graphical interface; develop an independently evaluated anomaly/classification model with precision, recall, and F1 metrics; optionally support a verified locally installed LLM.

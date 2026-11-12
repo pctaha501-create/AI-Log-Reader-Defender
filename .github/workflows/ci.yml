@@ -1,62 +1,61 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  test-and-build:
-    name: ${{ matrix.name }} / test / build
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Verify formatting
+        shell: bash
+        run: |
+          files="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$files" ]; then echo "$files"; exit 1; fi
+      - name: Test with race detector
+        run: go test -race ./...
+      - name: Static analysis
+        run: go vet ./...
+  build:
+    needs: quality
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Windows
+          - name: Windows x64
             os: windows-latest
-            goos: windows
-            goarch: amd64
-            artifact: ald-windows-amd64.exe
-          - name: Ubuntu Linux
+            filename: ald-windows-amd64.exe
+          - name: Ubuntu Linux x64
             os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            artifact: ald-linux-amd64
-
+            filename: ald-linux-amd64
     runs-on: ${{ matrix.os }}
-
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
           cache: true
-
-      - name: Run tests
-        run: go test ./...
-
-      - name: Run static analysis
-        run: go vet ./...
-
-      - name: Build portable binary
+      - name: Build
         shell: bash
         run: |
           mkdir -p dist
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
-            go build -trimpath -ldflags="-s -w" \
-            -o "dist/${{ matrix.artifact }}" ./cmd/ald
-
-      - name: Upload build
-        uses: actions/upload-artifact@v4
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.filename }}" ./cmd/ald
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./dist/${{ matrix.filename }} version
+          ./dist/${{ matrix.filename }} analyze --input testdata/sample-events.jsonl
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/${{ matrix.artifact }}
+          name: ${{ matrix.os == 'windows-latest' && 'windows' || 'linux' }}-amd64
+          path: dist/${{ matrix.filename }}
           if-no-files-found: error
           retention-days: 14

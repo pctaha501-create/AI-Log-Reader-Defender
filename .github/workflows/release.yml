@@ -1,80 +1,53 @@
-name: Build release binaries
-
+name: Release binaries
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   build:
-    name: Build ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Windows x64
             os: windows-latest
-            goos: windows
-            goarch: amd64
             filename: ald-windows-amd64.exe
           - name: Ubuntu Linux x64
             os: ubuntu-latest
-            goos: linux
-            goarch: amd64
             filename: ald-linux-amd64
-
     runs-on: ${{ matrix.os }}
-
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
           cache: true
-
-      - name: Test
-        run: go test ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Build
+      - run: go test ./...
+      - name: Build and checksum
         shell: bash
         run: |
           mkdir -p dist
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
-            go build -trimpath -ldflags="-s -w" \
-            -o "dist/${{ matrix.filename }}" ./cmd/ald
-
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.filename }}" ./cmd/ald
+          cd dist
+          sha256sum "${{ matrix.filename }}" > "${{ matrix.filename }}.sha256"
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/${{ matrix.filename }}
+          name: release-${{ matrix.os }}-amd64
+          path: dist/*
           if-no-files-found: error
           retention-days: 30
-
   publish:
-    name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download all binaries
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
           generate_release_notes: true

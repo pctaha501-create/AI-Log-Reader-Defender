@@ -60,7 +60,7 @@ func runAnalyze(args []string) {
 		return
 	}
 	fmt.Printf("Analyzed %d events; %d findings\n", report.EventCount, len(report.Findings))
-	if report.AIAnalysis != "" { fmt.Printf("\nLocal AI analysis:\n%s\n", report.AIAnalysis) }
+	if report.AIAnalysis != "" { fmt.Printf("\nOffline intelligence summary:\n%s\n", report.AIAnalysis) }
 	for _, finding := range report.Findings {
 		fmt.Printf("[%s] %s — %s\n  %s\n", finding.Severity, finding.RuleID, finding.Title, finding.Description)
 		for _, evidence := range finding.Evidence { fmt.Printf("  evidence: %s\n", evidence) }

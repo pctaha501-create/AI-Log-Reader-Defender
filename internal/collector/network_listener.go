@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -18,13 +17,10 @@ import (
 const maxTCPLineBytes = 1 << 20
 const maxTCPClients = 128
 
-// ListenNetwork receives line-oriented Syslog, CEF or LEEF messages and writes
-// normalized JSONL locally. It is intended for trusted LAN log forwarders.
 func ListenNetwork(ctx context.Context, out io.Writer, addr, protocol, format string, errOut io.Writer) error {
 	return ListenNetworkWithAllowlist(ctx, out, addr, protocol, format, nil, errOut)
 }
 
-// ListenNetworkWithAllowlist optionally restricts senders to IPs or CIDRs.
 func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protocol, format string, allow []string, errOut io.Writer) error {
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	format = strings.ToLower(strings.TrimSpace(format))
@@ -36,18 +32,12 @@ func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protoc
 	var errMu sync.Mutex
 	write := func(payload string) {
 		events, err := ingest.Read(strings.NewReader(payload), format)
-		if err != nil {
-			errMu.Lock(); fmt.Fprintf(errOut, "ignored malformed %s message: %v\n", format, err); errMu.Unlock()
-			return
-		}
+		if err != nil { errMu.Lock(); fmt.Fprintf(errOut, "ignored malformed %s message: %v\n", format, err); errMu.Unlock(); return }
 		enc := json.NewEncoder(out)
 		mu.Lock()
 		defer mu.Unlock()
 		for _, event := range events {
-			if err := enc.Encode(event); err != nil {
-				errMu.Lock(); fmt.Fprintf(errOut, "write event: %v\n", err); errMu.Unlock()
-				return
-			}
+			if err := enc.Encode(event); err != nil { errMu.Lock(); fmt.Fprintf(errOut, "write event: %v\n", err); errMu.Unlock(); return }
 		}
 	}
 
@@ -64,8 +54,7 @@ func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protoc
 				if ne, ok := err.(net.Error); ok && ne.Timeout() { continue }
 				return fmt.Errorf("receive UDP message: %w", err)
 			}
-			if !senderAllowed(sender, allow) { continue }
-			write(string(buf[:n]))
+			if senderAllowed(sender, allow) { write(string(buf[:n])) }
 		}
 	}
 
@@ -86,12 +75,7 @@ func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protoc
 			return fmt.Errorf("accept TCP connection: %w", err)
 		}
 		if !senderAllowed(conn.RemoteAddr(), allow) { _ = conn.Close(); continue }
-		select {
-		case slots <- struct{}{}:
-		default:
-			_ = conn.Close()
-			continue
-		}
+		select { case slots <- struct{}{}: default: _ = conn.Close(); continue }
 		clients.Add(1)
 		go func(c net.Conn) {
 			defer clients.Done()
@@ -99,18 +83,25 @@ func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protoc
 			defer c.Close()
 			reader := bufio.NewReaderSize(c, 64*1024)
 			line := make([]byte, 0, 4096)
+			dropping := false
 			for {
 				_ = c.SetReadDeadline(time.Now().Add(time.Second))
 				part, readErr := reader.ReadSlice('\n')
+				if dropping {
+					if readErr == nil { dropping = false }
+					if readErr == bufio.ErrBufferFull { continue }
+					if ne, ok := readErr.(net.Error); ok && ne.Timeout() { if ctx.Err() != nil { return }; continue }
+					if readErr == io.EOF || readErr != nil { return }
+					continue
+				}
 				if len(line)+len(part) > maxTCPLineBytes {
 					errMu.Lock(); fmt.Fprintf(errOut, "dropped TCP line exceeding %d bytes from %s\n", maxTCPLineBytes, c.RemoteAddr()); errMu.Unlock()
 					line = line[:0]
+					dropping = readErr != nil
+					if readErr == nil { continue }
 					if readErr == bufio.ErrBufferFull { continue }
-					if readErr != nil {
-						if ne, ok := readErr.(net.Error); ok && ne.Timeout() && ctx.Err() == nil { continue }
-						return
-					}
-					continue
+					if ne, ok := readErr.(net.Error); ok && ne.Timeout() { if ctx.Err() != nil { return }; continue }
+					return
 				}
 				line = append(line, part...)
 				if readErr == nil {
@@ -119,14 +110,8 @@ func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protoc
 					continue
 				}
 				if readErr == bufio.ErrBufferFull { continue }
-				if ne, ok := readErr.(net.Error); ok && ne.Timeout() {
-					if ctx.Err() != nil { return }
-					continue
-				}
-				if readErr == io.EOF {
-					if len(strings.TrimSpace(string(line))) > 0 { write(string(line)) }
-					return
-				}
+				if ne, ok := readErr.(net.Error); ok && ne.Timeout() { if ctx.Err() != nil { return }; continue }
+				if readErr == io.EOF { if len(strings.TrimSpace(string(line))) > 0 { write(string(line)) }; return }
 				return
 			}
 		}(conn)
@@ -148,6 +133,3 @@ func senderAllowed(addr net.Addr, allow []string) bool {
 	}
 	return false
 }
-
-// Keep os imported for the documented default stderr writer in examples.
-var _ = os.Stderr

@@ -1,48 +1,31 @@
 package ingest
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
 
-var firmwarePattern = regexp.MustCompile(`(?i)\\b(?:firmware|fw|version|software)[ :=/]+([vV]?[0-9][A-Za-z0-9._+-]*)`)
-var modelPattern = regexp.MustCompile(`(?i)\\b(?:model|product)[ :=]+([A-Za-z0-9._-]+)`)
+var firmwarePattern = regexp.MustCompile(`(?i)\b(?:firmware|fw|version|software)[ :=/]+([vV]?[0-9][A-Za-z0-9._+-]*)`)
+var modelPattern = regexp.MustCompile(`(?i)\b(?:model|product)[ :=]+([A-Za-z0-9._-]+)`)
 
 // inferDeviceMetadata enriches Raw without discarding vendor-specific fields.
-// It uses explicit structured fields first, then conservative signature hints.
+// Structured metadata wins; signatures are conservative best-effort hints.
 func inferDeviceMetadata(raw map[string]any) {
 	vendor := firstNonEmpty(raw, "device_vendor", "vendor", "manufacturer", "manufacturer_name", "observer_vendor")
 	product := firstNonEmpty(raw, "device_product", "product", "product_name", "observer_product")
 	model := firstNonEmpty(raw, "device_model", "model", "model_name", "hardware_model")
 	firmware := firstNonEmpty(raw, "firmware_version", "firmware", "fw_version", "software_version", "version")
-
 	identity := strings.ToLower(strings.Join([]string{
 		vendor, product, model, str(first(raw, "provider", "source_name", "process", "appname")),
 		str(first(raw, "host", "hostname", "computer")), str(first(raw, "message", "msg", "description")),
 		str(first(raw, "raw_line")),
 	}, " "))
-	if vendor == "" {
-		vendor = detectVendor(identity)
-	}
-	if product == "" {
-		product = detectProduct(identity)
-	}
-	if model == "" {
-		if m := modelPattern.FindStringSubmatch(identity); len(m) > 1 {
-			model = m[1]
-		}
-	}
-	if firmware == "" {
-		if m := firmwarePattern.FindStringSubmatch(identity); len(m) > 1 {
-			firmware = m[1]
-		}
-	}
+	if vendor == "" { vendor = detectVendor(identity) }
+	if product == "" { product = detectProduct(identity) }
+	if model == "" { if m := modelPattern.FindStringSubmatch(identity); len(m) > 1 { model = m[1] } }
+	if firmware == "" { if m := firmwarePattern.FindStringSubmatch(identity); len(m) > 1 { firmware = m[1] } }
 	deviceType := firstNonEmpty(raw, "device_type", "device_class", "observer_type")
-	if deviceType == "" {
-		deviceType = detectDeviceType(identity)
-	}
-
+	if deviceType == "" { deviceType = detectDeviceType(identity) }
 	setIfMissing(raw, "device_vendor", vendor)
 	setIfMissing(raw, "device_product", product)
 	setIfMissing(raw, "device_model", model)
@@ -57,73 +40,67 @@ func inferDeviceMetadata(raw map[string]any) {
 
 func firstNonEmpty(m map[string]any, keys ...string) string {
 	for _, key := range keys {
-		if value := strings.TrimSpace(str(m[key])); value != "" {
-			return value
-		}
+		if value := strings.TrimSpace(str(m[key])); value != "" { return value }
 	}
 	return ""
 }
 
 func setIfMissing(m map[string]any, key, value string) {
-	if strings.TrimSpace(str(m[key])) == "" && strings.TrimSpace(value) != "" {
-		m[key] = value
-	}
+	if strings.TrimSpace(str(m[key])) == "" && strings.TrimSpace(value) != "" { m[key] = value }
 }
 
 func detectVendor(identity string) string {
-	// Broad hints only; unknown manufacturers remain intact in Raw.
 	vendors := []struct{ needle, name string }{
-		{"fortinet", "Fortinet"}, {"fortigate", "Fortinet"},
-		{"palo alto", "Palo Alto Networks"}, {"pan-os", "Palo Alto Networks"},
+		{"fortinet", "Fortinet"}, {"fortigate", "Fortinet"}, {"fortios", "Fortinet"},
+		{"palo alto", "Palo Alto Networks"}, {"pan-os", "Palo Alto Networks"}, {"panos", "Palo Alto Networks"},
 		{"checkpoint", "Check Point"}, {"check point", "Check Point"},
-		{"sonicwall", "SonicWall"}, {"watchguard", "WatchGuard"},
-		{"sophos", "Sophos"}, {"juniper", "Juniper Networks"},
+		{"sonicwall", "SonicWall"}, {"watchguard", "WatchGuard"}, {"sophos", "Sophos"},
+		{"juniper", "Juniper Networks"}, {"srx", "Juniper Networks"},
 		{"mikrotik", "MikroTik"}, {"routeros", "MikroTik"},
-		{"cisco", "Cisco"}, {"aruba", "HPE Aruba"},
-		{"hewlett-packard", "HPE"}, {"hp ", "HPE"},
+		{"cisco", "Cisco"}, {"meraki", "Cisco Meraki"}, {"firepower", "Cisco"},
+		{"aruba", "HPE Aruba"}, {"hewlett-packard", "HPE"}, {"hp ", "HPE"},
 		{"ubiquiti", "Ubiquiti"}, {"unifi", "Ubiquiti"},
-		{"tp-link", "TP-Link"}, {"tplink", "TP-Link"},
-		{"huawei", "Huawei"}, {"zyxel", "Zyxel"},
-		{"netgear", "NETGEAR"}, {"d-link", "D-Link"},
-		{"dlink", "D-Link"}, {"f5 networks", "F5"},
-		{"barracuda", "Barracuda"}, {"dell", "Dell"},
-		{"lenovo", "Lenovo"}, {"microsoft", "Microsoft"},
-		{"windows", "Microsoft"}, {"linux", "Linux"},
-		{"apple", "Apple"},
+		{"tp-link", "TP-Link"}, {"tplink", "TP-Link"}, {"omada", "TP-Link"},
+		{"huawei", "Huawei"}, {"zyxel", "Zyxel"}, {"netgear", "NETGEAR"},
+		{"d-link", "D-Link"}, {"dlink", "D-Link"}, {"f5 networks", "F5"},
+		{"barracuda", "Barracuda"}, {"forcepoint", "Forcepoint"}, {"radware", "Radware"},
+		{"imperva", "Imperva"}, {"a10 networks", "A10 Networks"},
+		{"pfsense", "Netgate"}, {"netgate", "Netgate"}, {"opnsense", "OPNsense"},
+		{"vyos", "VyOS"}, {"firewalla", "Firewalla"}, {"arista", "Arista"},
+		{"extreme networks", "Extreme Networks"}, {"ruckus", "Ruckus"},
+		{"h3c", "H3C"}, {"nokia", "Nokia"}, {"vmware", "VMware"},
+		{"citrix", "Citrix"}, {"dell", "Dell"}, {"lenovo", "Lenovo"},
+		{"microsoft", "Microsoft"}, {"windows", "Microsoft"}, {"linux", "Linux"},
+		{"apple", "Apple"}, {"crowdstrike", "CrowdStrike"},
+		{"sentinelone", "SentinelOne"}, {"trend micro", "Trend Micro"},
+		{"bitdefender", "Bitdefender"}, {"kaspersky", "Kaspersky"}, {"eset", "ESET"},
+		{"zscaler", "Zscaler"}, {"suricata", "OISF"}, {"zeek", "Zeek"},
+		{"snort", "Cisco"},
 	}
-	for _, item := range vendors {
-		if strings.Contains(identity, item.needle) {
-			return item.name
-		}
-	}
+	for _, item := range vendors { if strings.Contains(identity, item.needle) { return item.name } }
 	return ""
 }
 
 func detectProduct(identity string) string {
 	switch {
-	case strings.Contains(identity, "fortigate"):
-		return "FortiGate"
-	case strings.Contains(identity, "pan-os") || strings.Contains(identity, "palo alto"):
-		return "PAN-OS"
-	case strings.Contains(identity, "routeros"):
-		return "RouterOS"
-	case strings.Contains(identity, "unifi"):
-		return "UniFi"
-	case strings.Contains(identity, "windows filtering platform") || strings.Contains(identity, "microsoft-windows-security-auditing"):
-		return "Windows Filtering Platform"
-	case strings.Contains(identity, "suricata"):
-		return "Suricata"
-	case strings.Contains(identity, "zeek"):
-		return "Zeek"
-	case strings.Contains(identity, "snort"):
-		return "Snort"
+	case strings.Contains(identity, "fortigate") || strings.Contains(identity, "fortios"): return "FortiGate"
+	case strings.Contains(identity, "pan-os") || strings.Contains(identity, "panos") || strings.Contains(identity, "palo alto"): return "PAN-OS"
+	case strings.Contains(identity, "routeros"): return "RouterOS"
+	case strings.Contains(identity, "unifi"): return "UniFi"
+	case strings.Contains(identity, "omada"): return "Omada"
+	case strings.Contains(identity, "pfsense"): return "pfSense"
+	case strings.Contains(identity, "opnsense"): return "OPNsense"
+	case strings.Contains(identity, "windows filtering platform") || strings.Contains(identity, "microsoft-windows-security-auditing"): return "Windows Filtering Platform"
+	case strings.Contains(identity, "suricata"): return "Suricata"
+	case strings.Contains(identity, "zeek"): return "Zeek"
+	case strings.Contains(identity, "snort"): return "Snort"
 	}
 	return ""
 }
 
 func detectDeviceType(identity string) string {
 	switch {
-	case strings.Contains(identity, "firewall") || strings.Contains(identity, "fortigate") || strings.Contains(identity, "pan-os") || strings.Contains(identity, "iptables") || strings.Contains(identity, "nftables") || strings.Contains(identity, "ufw"):
+	case strings.Contains(identity, "firewall") || strings.Contains(identity, "fortigate") || strings.Contains(identity, "pan-os") || strings.Contains(identity, "iptables") || strings.Contains(identity, "nftables") || strings.Contains(identity, "ufw") || strings.Contains(identity, "pfsense") || strings.Contains(identity, "opnsense"):
 		return "firewall"
 	case strings.Contains(identity, "switch") || strings.Contains(identity, "spanning-tree") || strings.Contains(identity, "stp "):
 		return "network-switch"
@@ -136,6 +113,3 @@ func detectDeviceType(identity string) string {
 	}
 	return ""
 }
-
-// Keep fmt linked here for stable, human-readable diagnostics in future adapters.
-var _ = fmt.Sprintf

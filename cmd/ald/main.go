@@ -15,7 +15,7 @@ import (
 	"github.com/pctaha501-create/AI-Log-Reader-Defender/internal/ingest"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func main() {
 	if len(os.Args) < 2 { usage(); os.Exit(2) }
@@ -72,6 +72,7 @@ func runAnalyze(args []string) {
 		return
 	}
 	fmt.Printf("Analyzed %d events; %d findings\n", report.EventCount, len(report.Findings))
+	if report.AIAnalysis != "" { fmt.Printf("\nLocal AI analysis:\n%s\n", report.AIAnalysis) }
 	for _, finding := range report.Findings {
 		fmt.Printf("[%s] %s — %s\n  %s\n", finding.Severity, finding.RuleID, finding.Title, finding.Description)
 		for _, evidence := range finding.Evidence { fmt.Printf("  evidence: %s\n", evidence) }

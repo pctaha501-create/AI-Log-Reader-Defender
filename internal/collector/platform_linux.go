@@ -61,5 +61,3 @@ func Collect(w io.Writer, since time.Duration) (int, error) {
 	}
 	return writeRecords(w, records)
 }
-
-func sinceArg(d time.Duration) string { return d.Round(time.Second).String() }

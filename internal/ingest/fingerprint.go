@@ -57,7 +57,7 @@ func detectVendor(identity string) string {
 		{"sonicwall", "SonicWall"}, {"watchguard", "WatchGuard"}, {"sophos", "Sophos"},
 		{"juniper", "Juniper Networks"}, {"srx", "Juniper Networks"},
 		{"mikrotik", "MikroTik"}, {"routeros", "MikroTik"},
-		{"cisco", "Cisco"}, {"meraki", "Cisco Meraki"}, {"firepower", "Cisco"},
+		{"meraki", "Cisco Meraki"}, {"cisco", "Cisco"}, {"firepower", "Cisco"},
 		{"aruba", "HPE Aruba"}, {"hewlett-packard", "HPE"}, {"hp ", "HPE"},
 		{"ubiquiti", "Ubiquiti"}, {"unifi", "Ubiquiti"},
 		{"tp-link", "TP-Link"}, {"tplink", "TP-Link"}, {"omada", "TP-Link"},

@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )

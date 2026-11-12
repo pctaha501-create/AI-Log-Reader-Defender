@@ -14,6 +14,7 @@ func TestReadSyslogUFWFields(t *testing.T) {
 	if e.SourceIP != "203.0.113.8" { t.Fatalf("source IP = %q", e.SourceIP) }
 	if e.Raw["destination_ip"] != "192.0.2.1" || e.Raw["destination_port"] != "443" { t.Fatalf("network fields missing: %#v", e.Raw) }
 	if e.Provider != "kernel" { t.Fatalf("provider = %q", e.Provider) }
+	if e.Timestamp.IsZero() { t.Fatal("RFC3164 timestamp was not parsed") }
 }
 
 func TestReadRFC5424Syslog(t *testing.T) {
@@ -36,6 +37,6 @@ func TestReadLEEF(t *testing.T) {
 	input := "LEEF:2.0|Acme|Router|1.0|DROP|0x09|devTime=2026-11-12T10:20:30Z\tsrc=198.51.100.9\tdst=192.0.2.9\tdpt=53\tproto=UDP\tact=deny"
 	events, err := Read(strings.NewReader(input), "leef")
 	if err != nil { t.Fatal(err) }
-	if len(events) != 1 || events[0].SourceIP != "198.51.100.9" { t.Fatalf("unexpected LEEF event: %#v", events) }
+	if len(events) != 1 || events[0].SourceIP != "198.51.100.9" { t.Fatalf("unexpected LEEF event: %#v", events[0]) }
 	if events[0].Raw["destination_port"] != "53" { t.Fatalf("destination port missing: %#v", events[0].Raw) }
 }

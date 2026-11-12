@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pctaha501-create/AI-Log-Reader-Defender/internal/analysis"
+	localai "github.com/pctaha501-create/AI-Log-Reader-Defender/internal/ai"
 	"github.com/pctaha501-create/AI-Log-Reader-Defender/internal/collector"
 	"github.com/pctaha501-create/AI-Log-Reader-Defender/internal/ingest"
 )
@@ -35,7 +36,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "AI Log Reader & Defender")
 	fmt.Fprintln(os.Stderr, "Usage: ald <version|analyze|collect|listen>")
-	fmt.Fprintln(os.Stderr, "  analyze --input events.log [--format jsonl|syslog|cef|leef] [--json]")
+	fmt.Fprintln(os.Stderr, "  analyze --input events.log [--format auto] [--ai ollama --model NAME] [--json]")
 	fmt.Fprintln(os.Stderr, "  collect --since 1h --out events.jsonl")
 	fmt.Fprintln(os.Stderr, "  listen --addr 0.0.0.0:5514 --protocol udp --format syslog --out network.jsonl")
 }
@@ -44,6 +45,9 @@ func runAnalyze(args []string) {
 	input := fs.String("input", "", "input log file (required)")
 	format := fs.String("format", "auto", "input format: auto, jsonl, syslog, cef, leef, csv, or text")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON")
+	aiMode := fs.String("ai", "off", "optional local AI: off or ollama")
+	ollamaURL := fs.String("ollama-url", "http://127.0.0.1:11434", "local Ollama URL (loopback only)")
+	modelName := fs.String("model", "qwen3-coder:30b", "installed local Ollama model")
 	_ = fs.Parse(args)
 	if *input == "" { fmt.Fprintln(os.Stderr, "--input is required"); os.Exit(2) }
 	f, err := os.Open(*input)
@@ -52,6 +56,15 @@ func runAnalyze(args []string) {
 	events, err := ingest.Read(f, *format)
 	if err != nil { fatal(err) }
 	report := analysis.Analyze(events)
+	if *aiMode == "ollama" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		answer, aiErr := localai.Analyze(ctx, *ollamaURL, *modelName, events, report)
+		if aiErr != nil { fatal(aiErr) }
+		report.AIAnalysis = answer
+	} else if *aiMode != "off" {
+		fatal(fmt.Errorf("unsupported --ai mode %q (use off or ollama)", *aiMode))
+	}
 	if *asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

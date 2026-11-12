@@ -27,4 +27,5 @@ type Report struct {
  GeneratedAt time.Time `json:"generated_at"`
  EventCount int `json:"event_count"`
  Findings []Finding `json:"findings"`
+ AIAnalysis string `json:"ai_analysis,omitempty"`
 }

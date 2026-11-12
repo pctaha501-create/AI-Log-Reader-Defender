@@ -40,6 +40,7 @@ func ReadJSONL(r io.Reader) ([]model.Event, error) {
 }
 
 func normalize(raw map[string]any) model.Event {
+	inferDeviceMetadata(raw)
 	e := model.Event{Raw: raw}
 	e.Timestamp = parseTime(first(raw, "timestamp", "time", "@timestamp", "ts", "__REALTIME_TIMESTAMP"))
 	e.Source = str(first(raw, "source", "channel", "log_name"))

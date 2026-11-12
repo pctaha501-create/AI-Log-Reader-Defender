@@ -15,15 +15,16 @@ func inferDeviceMetadata(raw map[string]any) {
 	product := firstNonEmpty(raw, "device_product", "product", "product_name", "observer_product")
 	model := firstNonEmpty(raw, "device_model", "model", "model_name", "hardware_model")
 	firmware := firstNonEmpty(raw, "firmware_version", "firmware", "fw_version", "software_version", "version")
-	identity := strings.ToLower(strings.Join([]string{
+	identityText := strings.Join([]string{
 		vendor, product, model, str(first(raw, "provider", "source_name", "process", "appname")),
 		str(first(raw, "host", "hostname", "computer")), str(first(raw, "message", "msg", "description")),
 		str(first(raw, "raw_line")),
-	}, " "))
+	}, " ")
+	identity := strings.ToLower(identityText)
 	if vendor == "" { vendor = detectVendor(identity) }
 	if product == "" { product = detectProduct(identity) }
-	if model == "" { if m := modelPattern.FindStringSubmatch(identity); len(m) > 1 { model = m[1] } }
-	if firmware == "" { if m := firmwarePattern.FindStringSubmatch(identity); len(m) > 1 { firmware = m[1] } }
+	if model == "" { if m := modelPattern.FindStringSubmatch(identityText); len(m) > 1 { model = m[1] } }
+	if firmware == "" { if m := firmwarePattern.FindStringSubmatch(identityText); len(m) > 1 { firmware = m[1] } }
 	deviceType := firstNonEmpty(raw, "device_type", "device_class", "observer_type")
 	if deviceType == "" { deviceType = detectDeviceType(identity) }
 	setIfMissing(raw, "device_vendor", vendor)

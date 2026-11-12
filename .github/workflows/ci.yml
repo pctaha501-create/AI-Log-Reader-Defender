@@ -1,23 +1,62 @@
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
-  test:
+  test-and-build:
+    name: ${{ matrix.name }} / test / build
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - name: Windows
+            os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: ald-windows-amd64.exe
+          - name: Ubuntu Linux
+            os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: ald-linux-amd64
+
     runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
-      - run: go test ./...
-      - run: go vet ./...
-      - run: go build -o ald ./cmd/ald
+          go-version: '1.27.x'
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Run static analysis
+        run: go vet ./...
+
+      - name: Build portable binary
+        shell: bash
+        run: |
+          mkdir -p dist
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" \
+            -o "dist/${{ matrix.artifact }}" ./cmd/ald
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 14

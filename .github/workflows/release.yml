@@ -1,56 +1,80 @@
 name: Build release binaries
+
 on:
-  workflow_dispatch:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   build:
+    name: Build ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - name: Windows x64
+            os: windows-latest
             goos: windows
             goarch: amd64
-            ext: .exe
-          - os: ubuntu-latest
+            filename: ald-windows-amd64.exe
+          - name: Ubuntu Linux x64
+            os: ubuntu-latest
             goos: linux
             goarch: amd64
-            ext: ''
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
-            ext: ''
-          - os: macos-latest
-            goos: darwin
-            goarch: amd64
-            ext: ''
+            filename: ald-linux-amd64
+
     runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.23.x'
+          go-version: '1.27.x'
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
+
       - name: Build
         shell: bash
         run: |
           mkdir -p dist
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "dist/ald-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" ./cmd/ald
-      - uses: actions/upload-artifact@v4
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" \
+            -o "dist/${{ matrix.filename }}" ./cmd/ald
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ald-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ matrix.filename }}
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
+    name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
         with:
           files: release-assets/*
+          generate_release_notes: true

@@ -4,6 +4,7 @@ package collector
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +20,7 @@ func Collect(w io.Writer, since time.Duration) (int, error) {
 	cmd := exec.Command("journalctl", "--since", sinceArg(since), "--output=json", "--no-pager")
 	out, journalErr := cmd.Output()
 	if journalErr == nil {
-		s := bufio.NewScanner(bytesReader(out))
+		s := bufio.NewScanner(bytes.NewReader(out))
 		s.Buffer(make([]byte, 64*1024), 8*1024*1024)
 		for s.Scan() {
 			var m map[string]any
@@ -42,13 +43,12 @@ func Collect(w io.Writer, since time.Duration) (int, error) {
 		"/var/log/audit/audit.log",
 	}
 	host, _ := os.Hostname()
-	cutoff := time.Now().Add(-since)
 	for _, path := range paths {
 		f, err := os.Open(path)
 		if err != nil { continue }
 		s := bufio.NewScanner(f)
 		s.Buffer(make([]byte, 64*1024), 8*1024*1024)
-		for s.Scan() {
+		for lineCount := 0; s.Scan() && lineCount < 20000; lineCount++ {
 			line := s.Text()
 			if line == "" { continue }
 			records = append(records, Record{"source":path, "host":host, "message":line, "raw_line":line, "platform":"linux"})
@@ -56,7 +56,6 @@ func Collect(w io.Writer, since time.Duration) (int, error) {
 		_ = s.Err()
 		_ = f.Close()
 	}
-	_ = cutoff // File-based syslog timestamps vary by distro; retain original text for parser-side dating.
 	if journalErr != nil && len(records) == 0 {
 		return 0, fmt.Errorf("journalctl unavailable and no readable standard log files found: %w", journalErr)
 	}

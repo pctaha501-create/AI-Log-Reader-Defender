@@ -24,6 +24,12 @@ func Read(r io.Reader, format string) ([]model.Event, error) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "", "jsonl":
 		return ReadJSONL(r)
+	case "auto":
+		return readAuto(r)
+	case "text", "kv", "key-value":
+		return readGeneric(r)
+	case "csv":
+		return readCSV(r)
 	case "syslog", "rfc3164", "rfc5424":
 		return readSyslog(r)
 	case "cef":
@@ -31,7 +37,7 @@ func Read(r io.Reader, format string) ([]model.Event, error) {
 	case "leef":
 		return readLEEF(r)
 	default:
-		return nil, fmt.Errorf("unsupported input format %q (use jsonl, syslog, cef, or leef)", format)
+		return nil, fmt.Errorf("unsupported input format %q (use auto, jsonl, syslog, cef, leef, csv, or text)", format)
 	}
 }
 

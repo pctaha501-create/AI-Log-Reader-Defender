@@ -42,7 +42,7 @@ func usage() {
 func runAnalyze(args []string) {
 	fs := flag.NewFlagSet("analyze", flag.ExitOnError)
 	input := fs.String("input", "", "input log file (required)")
-	format := fs.String("format", "jsonl", "input format: jsonl, syslog, cef, or leef")
+	format := fs.String("format", "auto", "input format: auto, jsonl, syslog, cef, leef, csv, or text")
 	asJSON := fs.Bool("json", false, "print machine-readable JSON")
 	_ = fs.Parse(args)
 	if *input == "" { fmt.Fprintln(os.Stderr, "--input is required"); os.Exit(2) }

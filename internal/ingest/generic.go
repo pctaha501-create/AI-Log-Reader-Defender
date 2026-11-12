@@ -66,10 +66,12 @@ func readCSV(r io.Reader) ([]model.Event, error) {
 		if err == io.EOF { break }
 		if err != nil { return nil, fmt.Errorf("CSV line %d: %w", line, err) }
 		raw := map[string]any{"source":"csv"}
+		fields := make(map[string]string)
 		for i, value := range row {
-			if i < len(header) && header[i] != "" { raw[header[i]] = strings.TrimSpace(value) }
+			if i < len(header) && header[i] != "" { raw[header[i]] = strings.TrimSpace(value); fields[header[i]] = strings.TrimSpace(value) }
 			raw[fmt.Sprintf("column_%d", i+1)] = value
 		}
+		mapNetworkAliases(raw, fields)
 		raw["raw_csv_fields"] = row
 		events = append(events, normalize(raw))
 	}
@@ -86,7 +88,7 @@ func readGeneric(r io.Reader) ([]model.Event, error) {
 		fields := parseKeyValues(text)
 		raw := map[string]any{"source":"generic-text", "message":text, "raw_line":text, "line_number":line}
 		for key, value := range fields { raw[key] = value }
-		addNetworkAliases(raw, fields)
+		mapNetworkAliases(raw, fields)
 		events = append(events, normalize(raw))
 	}
 	if err := s.Err(); err != nil { return nil, fmt.Errorf("read generic text: %w", err) }

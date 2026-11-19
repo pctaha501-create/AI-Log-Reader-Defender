@@ -3,51 +3,41 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows x64
-            os: windows-latest
-            filename: ald-windows-amd64.exe
-          - name: Ubuntu Linux x64
-            os: ubuntu-latest
-            filename: ald-linux-amd64
-    runs-on: ${{ matrix.os }}
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
-          cache: true
-      - run: go test ./...
-      - name: Build and checksum
+          cache: false
+      - name: Verify source
+        run: |
+          test -z "$(gofmt -l $(git ls-files '*.go'))"
+          go test ./...
+          go vet ./...
+      - name: Build Windows and Linux binaries
         shell: bash
         run: |
           mkdir -p dist
-          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.filename }}" ./cmd/ald
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/ald-windows-amd64.exe ./cmd/ald
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/ald-linux-amd64 ./cmd/ald
           cd dist
-          sha256sum "${{ matrix.filename }}" > "${{ matrix.filename }}.sha256"
-      - uses: actions/upload-artifact@v4
+          sha256sum ald-windows-amd64.exe ald-linux-amd64 > SHA256SUMS.txt
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: release-${{ matrix.os }}-amd64
-          path: dist/*
-          if-no-files-found: error
-          retention-days: 30
-  publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: release-assets/*
+          tag_name: ${{ github.ref_name }}
+          name: AI Log Reader & Defender ${{ github.ref_name }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/ald-windows-amd64.exe
+            dist/ald-linux-amd64
+            dist/SHA256SUMS.txt

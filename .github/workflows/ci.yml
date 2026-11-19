@@ -4,8 +4,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -14,13 +16,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
-          cache: true
+          cache: false
       - name: Format Go source
-        run: gofmt -w $(git ls-files '*.go')
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
       - name: Test with race detector
         run: go test -race ./...
       - name: Static analysis
         run: go vet ./...
+
   build:
     needs: quality
     strategy:
@@ -39,7 +42,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
-          cache: true
+          cache: false
       - name: Build
         shell: bash
         run: |
@@ -50,9 +53,3 @@ jobs:
         run: |
           ./dist/${{ matrix.filename }} version
           ./dist/${{ matrix.filename }} analyze --input testdata/sample-events.jsonl
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.os == 'windows-latest' && 'windows' || 'linux' }}-amd64
-          path: dist/${{ matrix.filename }}
-          if-no-files-found: error
-          retention-days: 14

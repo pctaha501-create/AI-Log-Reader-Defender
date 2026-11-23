@@ -29,13 +29,30 @@ func TestAutoDetectStructuredJSONDocuments(t *testing.T) {
 	if events[0].Raw["raw_record"] == nil { t.Fatal("original JSON record was not preserved") }
 }
 
+func TestAutoDetectStructuredJSONECSAndOpenTelemetry(t *testing.T) {
+	input := `{"@timestamp":"2026-11-23T10:00:00Z","event":{"id":"4625","severity":8,"provider":"authd","original":"authentication failed"},"host":{"name":"edge-02"},"user":{"name":"alice"},"source":{"ip":"203.0.113.9"},"destination":{"ip":"198.51.100.7"},"log":{"level":"warning"}}`
+	events, err := Read(strings.NewReader(input), "auto")
+	if err != nil { t.Fatal(err) }
+	if len(events) != 1 { t.Fatalf("got %d events, want 1", len(events)) }
+	got := events[0]
+	if got.EventID != "4625" || got.Host != "edge-02" || got.User != "alice" || got.Provider != "authd" || got.Message != "authentication failed" {
+		t.Fatalf("ECS aliases not normalized: %#v", got)
+	}
+	if got.Raw["source.ip"] != "203.0.113.9" || got.Raw["destination.ip"] != "198.51.100.7" {
+		t.Fatalf("network evidence not preserved: %#v", got.Raw)
+	}
+}
+
 func TestAutoDetectStructuredXMLWindowsEvents(t *testing.T) {
 	input := `<?xml version="1.0"?><Events><Event><System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4625</EventID><TimeCreated SystemTime="2026-11-23T10:00:00Z"/><Computer>host-a</Computer></System><EventData><Data Name="TargetUserName">alice</Data><Data Name="IpAddress">198.51.100.8</Data></EventData></Event><Event><System><EventID>1102</EventID><Computer>host-a</Computer></System><RenderingInfo><Message>The audit log was cleared</Message></RenderingInfo></Event></Events>`
 	events, err := Read(strings.NewReader(input), "auto")
 	if err != nil { t.Fatal(err) }
 	if len(events) != 2 { t.Fatalf("got %d events, want 2", len(events)) }
-	if events[0].EventID != "4625" || events[0].Host != "host-a" { t.Fatalf("XML system fields missing: %#v", events[0]) }
+	if events[0].EventID != "4625" || events[0].Host != "host-a" || events[0].User != "alice" || events[0].Provider != "Microsoft-Windows-Security-Auditing" {
+		t.Fatalf("XML system fields missing: %#v", events[0])
+	}
 	if events[0].Raw["targetusername"] != "alice" { t.Fatalf("XML named event data missing: %#v", events[0].Raw) }
+	if events[1].Message != "The audit log was cleared" { t.Fatalf("XML rendered message missing: %#v", events[1]) }
 }
 
 func TestAutoDetectDelimitedTabularLogs(t *testing.T) {

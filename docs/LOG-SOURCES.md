@@ -1,35 +1,21 @@
-# Log formats and network telemetry
+# Log formats and native collection sources
 
-The ingestion layer accepts line-oriented JSONL, Syslog (RFC 3164 and RFC 5424), CEF, and LEEF.
-The parsers preserve the original line and vendor extension fields in the normalized event's Raw map.
-Common network fields such as source/destination IP, source/destination port, protocol, and action are normalized when present.
+The ingestion layer accepts line-oriented JSONL, Syslog (RFC 3164 and RFC 5424), CEF, LEEF, recognizable CSV, generic key/value text, and otherwise retains unrecognized lines as generic events. Raw fields are retained to support vendor-neutral analysis. This does not decode proprietary binary, encrypted, compressed-with-unknown-codec, or undocumented formats.
 
-## Receive router and appliance logs over the LAN
+## Windows native collection
 
-The CLI can receive Syslog, CEF, or LEEF messages over UDP or line-delimited TCP and append normalized events to a local JSONL file:
+The Windows collector queries Security, System, Application, Microsoft Defender, Windows Firewall, PowerShell, Sysmon, WMI Activity, Task Scheduler, Terminal Services session/remote-connection, AppLocker, and Code Integrity event channels. Optional channels that are not installed or enabled are skipped; collection fails only when every configured channel is inaccessible or unavailable. Each channel query is capped at 5,000 newest records and has a 45-second timeout. Run elevated when the account lacks event-log permissions.
 
-    ald listen --addr 0.0.0.0:5514 --protocol udp --format syslog --out network-events.jsonl
+Useful additional sources that administrators may export/import include DNS Server, DHCP Server, IIS, Hyper-V, Failover Clustering, and third-party EDR/AV product logs. These are not queried automatically because they are optional roles/products and channel names vary by installation.
 
-Configure a router, managed switch, or firewall appliance to forward its logs to the computer's LAN IP and UDP port 5514. TCP is also available:
+## Linux native collection
 
-    ald listen --addr 0.0.0.0:5514 --protocol tcp --format cef --out firewall-events.jsonl
+The Linux collector queries journald with a 20,000-record cap and a 45-second timeout. It also checks recent, readable files including auth/secure, syslog/messages, kernel, UFW, auditd, daemon, cron, mail, Fail2ban, boot, Nginx, Apache, and Lighttpd logs. File logs are included only when the file modification time falls within the requested lookback; each file is capped to its most recent 20,000 lines. Access may require root or membership in the appropriate journal/log-reading groups.
 
-Use a high, unprivileged port such as 5514 rather than binding to 514. Configure the host firewall to permit inbound traffic only from trusted management networks or known device IPs. Do not expose the listener to the public internet. The listener is intentionally local-first and does not send logs to a cloud service.
+## Network devices and appliances
 
-TCP ingestion currently expects newline-delimited messages; RFC 6587 octet-counted framing is not implemented yet. UDP messages are parsed as received datagrams.
+Routers, switches, firewalls, VPN gateways, wireless controllers, IDS/IPS, servers, hypervisors, containers, cloud audit exports, and IoT/industrial gateways can forward Syslog/CEF/LEEF over UDP or TCP to the listener. TCP supports newline-delimited messages and RFC 6587 octet-counted framing. Restrict listener exposure with host firewall rules and the sender IP/CIDR allowlist. Use a dedicated management/VLAN network where possible.
 
-## Firewall analysis baseline
+## Coverage limits
 
-The current deterministic rules identify:
-- Windows Filtering Platform block events (Security event IDs 5152 and 5157).
-- Repeated blocked connections from one source and suspected multi-port scans (at least 10 blocked attempts to 5 or more destination ports within five minutes).
-- Firewall service/protection disable indicators and selected Windows firewall policy/rule change event IDs.
-- Common UFW, iptables, nftables, firewalld, CEF, and LEEF action/field conventions when they are present in the imported message or extension fields.
-
-Findings are triage signals, not proof of compromise. Thresholds are intentionally conservative and should be tuned with representative network traffic before production deployment.
-
-## Important collection limitations
-
-Parsing a format does not mean the application can automatically retrieve logs from every device. Network appliances generally need to be configured to forward Syslog/CEF/LEEF to a reachable collector, or exported logs must be imported. SNMP is a separate telemetry protocol and is not a log format; it requires a dedicated, read-only device integration and per-vendor support.
-
-The initial Windows/Linux native collector remains limited to the operating-system sources documented in the main README. Router, managed-switch, firewall-appliance, and hub integrations are not automatically discovered or configured. Proprietary vendor formats may require dedicated parsers and sample logs for validation.
+Generic ingestion and generic security rules allow useful analysis of unknown vendors when their events contain readable text or common structured fields. Vendor fingerprinting and adapters are heuristic and do not imply full support for every product/version. Proprietary binary protocols, encrypted payloads, undocumented fields, and disabled/missing audit sources require product-specific documentation or representative samples. No findings does not prove a system is safe.

@@ -12,6 +12,22 @@ import (
 	"time"
 )
 
+const windowsEventsPerChannel = 5000
+
+var windowsEventChannels = []string{
+	"Security", "System", "Application",
+	"Microsoft-Windows-Windows Defender/Operational",
+	"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall",
+	"Microsoft-Windows-PowerShell/Operational",
+	"Microsoft-Windows-Sysmon/Operational",
+	"Microsoft-Windows-WMI-Activity/Operational",
+	"Microsoft-Windows-TaskScheduler/Operational",
+	"Microsoft-Windows-TerminalServices-LocalSessionManager/Operational",
+	"Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational",
+	"Microsoft-Windows-AppLocker/EXE and DLL",
+	"Microsoft-Windows-CodeIntegrity/Operational",
+}
+
 func Platform() string { return "windows" }
 
 type windowsEvent struct {
@@ -22,25 +38,24 @@ type windowsEvent struct {
 		Channel string `xml:"Channel"`
 		Computer string `xml:"Computer"`
 	} `xml:"System"`
-	EventData struct { Data []struct { Name string `xml:"Name,attr"`; Value string `xml:",chardata"` } `xml:"Data"` } `xml:"EventData"`
+	EventData struct {
+		Data []struct { Name string `xml:"Name,attr"`; Value string `xml:",chardata"` } `xml:"Data"`
+	} `xml:"EventData"`
 }
 
 func Collect(w io.Writer, since time.Duration) (int, error) {
-	channels := []string{
-		"Security", "System", "Application",
-		"Microsoft-Windows-Windows Defender/Operational",
-		"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall",
-		"Microsoft-Windows-PowerShell/Operational",
-	}
 	cutoff := time.Now().Add(-since)
 	var records []Record
 	var failures []string
-	for _, channel := range channels {
+	for _, channel := range windowsEventChannels {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		cmd := exec.CommandContext(ctx, "wevtutil.exe", "qe", channel, "/rd:true", "/c:2000", "/f:xml")
+		cmd := exec.CommandContext(ctx, "wevtutil.exe", "qe", channel, "/rd:true", fmt.Sprintf("/c:%d", windowsEventsPerChannel), "/f:xml")
 		out, err := cmd.Output()
 		cancel()
-		if err != nil { failures = append(failures, channel+": "+err.Error()); continue }
+		if err != nil {
+			failures = append(failures, channel+": "+err.Error())
+			continue
+		}
 		decoder := xml.NewDecoder(strings.NewReader(string(out)))
 		for {
 			token, tokenErr := decoder.Token()
@@ -65,7 +80,7 @@ func Collect(w io.Writer, since time.Duration) (int, error) {
 			records = append(records, record)
 		}
 	}
-	if len(records) == 0 && len(failures) == len(channels) {
+	if len(records) == 0 && len(failures) == len(windowsEventChannels) {
 		return 0, fmt.Errorf("could not read any Windows event channel (run elevated if required): %s", strings.Join(failures, "; "))
 	}
 	n, err := writeRecords(w, records)

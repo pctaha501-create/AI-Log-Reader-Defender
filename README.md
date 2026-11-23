@@ -55,7 +55,7 @@ Configure a router, managed switch, VPN gateway, IDS/IPS or firewall to forward 
 
     ald listen --addr 0.0.0.0:5514 --protocol udp --format syslog --allow 192.0.2.10,192.0.2.0/24 --out network-events.jsonl
 
-Omit --allow only if the host firewall independently restricts the listener to trusted senders. Use --protocol tcp for newline-framed TCP. TCP RFC 6587 octet-counting is not implemented. Never expose the listener to the public Internet; UDP delivery is not guaranteed.
+Omit --allow only if the host firewall independently restricts the listener to trusted senders. Use --protocol tcp for newline-framed TCP. TCP supports newline-delimited framing and RFC 6587 octet-counted framing; each frame is bounded to 1 MiB. Never expose the listener to the public Internet; UDP delivery is not guaranteed.
 
 ## Supported formats
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"strconv"
 	"sync"
 	"time"
 
@@ -82,40 +83,88 @@ func ListenNetworkWithAllowlist(ctx context.Context, out io.Writer, addr, protoc
 			defer func(){ <-slots }()
 			defer c.Close()
 			reader := bufio.NewReaderSize(c, 64*1024)
-			line := make([]byte, 0, 4096)
-			dropping := false
+			framer := newTCPFramer(reader)
 			for {
 				_ = c.SetReadDeadline(time.Now().Add(time.Second))
-				part, readErr := reader.ReadSlice('\n')
-				if dropping {
-					if readErr == nil { dropping = false }
-					if readErr == bufio.ErrBufferFull { continue }
-					if ne, ok := readErr.(net.Error); ok && ne.Timeout() { if ctx.Err() != nil { return }; continue }
-					if readErr == io.EOF || readErr != nil { return }
+				message, ok, readErr := framer.Next()
+				if ne, isNetErr := readErr.(net.Error); isNetErr && ne.Timeout() {
+					if ctx.Err() != nil { return }
 					continue
 				}
-				if len(line)+len(part) > maxTCPLineBytes {
-					errMu.Lock(); fmt.Fprintf(errOut, "dropped TCP line exceeding %d bytes from %s\n", maxTCPLineBytes, c.RemoteAddr()); errMu.Unlock()
-					line = line[:0]
-					dropping = readErr != nil
-					if readErr == nil { continue }
-					if readErr == bufio.ErrBufferFull { continue }
-					if ne, ok := readErr.(net.Error); ok && ne.Timeout() { if ctx.Err() != nil { return }; continue }
+				if readErr == io.EOF { return }
+				if readErr != nil {
+					errMu.Lock(); fmt.Fprintf(errOut, "dropped invalid TCP frame from %s: %v\n", c.RemoteAddr(), readErr); errMu.Unlock()
 					return
 				}
-				line = append(line, part...)
-				if readErr == nil {
-					if len(strings.TrimSpace(string(line))) > 0 { write(string(line)) }
-					line = line[:0]
-					continue
-				}
-				if readErr == bufio.ErrBufferFull { continue }
-				if ne, ok := readErr.(net.Error); ok && ne.Timeout() { if ctx.Err() != nil { return }; continue }
-				if readErr == io.EOF { if len(strings.TrimSpace(string(line))) > 0 { write(string(line)) }; return }
-				return
+				if ok && strings.TrimSpace(message) != "" { write(message) }
 			}
 		}(conn)
 	}
+}
+
+
+// tcpFramer accepts both newline-delimited messages and RFC 6587 octet-counted
+// messages. Its state survives read timeouts, and every frame is size-bounded.
+type tcpFramer struct {
+ reader *bufio.Reader
+ mode byte // 0=start, 1=line, 2=octet-count prefix, 3=octet payload
+ line []byte
+ prefix []byte
+ frame []byte
+ remaining int
+}
+
+func newTCPFramer(reader *bufio.Reader) *tcpFramer {
+ return &tcpFramer{reader: reader, line: make([]byte, 0, 4096), prefix: make([]byte, 0, 12)}
+}
+
+func (f *tcpFramer) reset() {
+ f.mode = 0
+ f.line = f.line[:0]
+ f.prefix = f.prefix[:0]
+ f.frame = f.frame[:0]
+ f.remaining = 0
+}
+
+func (f *tcpFramer) Next() (string, bool, error) {
+ for {
+  b, err := f.reader.ReadByte()
+  if err != nil {
+   if err == io.EOF && (f.mode == 1 || f.mode == 2) {
+    if f.mode == 2 { f.line = append(f.line, f.prefix...) }
+    msg := strings.TrimSpace(string(f.line)); f.reset()
+    if msg != "" { return msg, true, nil }
+   }
+   if err == io.EOF && f.mode == 3 { return "", false, io.ErrUnexpectedEOF }
+   return "", false, err
+  }
+  switch f.mode {
+  case 0:
+   if b >= '0' && b <= '9' { f.mode = 2; f.prefix = append(f.prefix, b) } else { f.mode = 1; f.line = append(f.line, b) }
+  case 1:
+   f.line = append(f.line, b)
+   if len(f.line) > maxTCPLineBytes { return "", false, fmt.Errorf("TCP line exceeds %d bytes", maxTCPLineBytes) }
+   if b == '\n' { msg := strings.TrimSpace(string(f.line)); f.reset(); return msg, msg != "", nil }
+  case 2:
+   if b >= '0' && b <= '9' && len(f.prefix) < 10 { f.prefix = append(f.prefix, b); continue }
+   if b == ' ' {
+    n, parseErr := strconv.Atoi(string(f.prefix))
+    if parseErr != nil || n < 1 || n > maxTCPLineBytes { return "", false, fmt.Errorf("invalid RFC 6587 frame length %q", f.prefix) }
+    f.mode, f.remaining = 3, n
+    f.frame = f.frame[:0]
+    continue
+   }
+   f.mode = 1
+   f.line = append(f.line, f.prefix...)
+   f.line = append(f.line, b)
+   if len(f.line) > maxTCPLineBytes { return "", false, fmt.Errorf("TCP line exceeds %d bytes", maxTCPLineBytes) }
+   if b == '\n' { msg := strings.TrimSpace(string(f.line)); f.reset(); return msg, msg != "", nil }
+  case 3:
+   f.frame = append(f.frame, b)
+   f.remaining--
+   if f.remaining == 0 { msg := string(f.frame); f.reset(); return msg, true, nil }
+  }
+ }
 }
 
 func senderAllowed(addr net.Addr, allow []string) bool {

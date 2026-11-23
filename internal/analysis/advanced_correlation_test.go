@@ -58,17 +58,19 @@ func TestAdvancedCorrelationDetectsDefenseEvasionAndImpact(t *testing.T) {
 func TestAdvancedCorrelationRejectsUnrelatedOrOutOfWindowEvents(t *testing.T) {
 	base := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
 	unrelated := []model.Event{
-		{Timestamp: base, Host: "host-a", EventID: "4720", Message: "user account created"},
-		{Timestamp: base.Add(time.Minute), Host: "host-b", EventID: "4728", Message: "added to administrators"},
-		{Timestamp: base.Add(2 * time.Minute), Host: "host-c", EventID: "1102", Message: "audit log was cleared"},
+		{Timestamp: base, Host: "host-a", User: "alice", EventID: "4625", Message: "failed login"},
+		{Timestamp: base.Add(time.Minute), Host: "host-b", User: "alice", EventID: "4720", Message: "user account created"},
+		{Timestamp: base.Add(2 * time.Minute), Host: "host-c", User: "alice", EventID: "4728", Message: "added to administrators"},
+		{Timestamp: base.Add(3 * time.Minute), Host: "host-d", User: "alice", EventID: "1102", Message: "audit log was cleared"},
 	}
 	if got := analyzeAdvancedCorrelation(unrelated); len(got) != 0 {
 		t.Fatalf("unrelated hosts must not correlate: %#v", got)
 	}
 	outOfWindow := []model.Event{
-		{Timestamp: base, Host: "host-a", EventID: "4720", Message: "user account created"},
-		{Timestamp: base.Add(3 * time.Hour), Host: "host-a", EventID: "4728", Message: "added to administrators"},
-		{Timestamp: base.Add(4 * time.Hour), Host: "host-a", EventID: "1102", Message: "audit log was cleared"},
+		{Timestamp: base, Host: "host-a", User: "alice", EventID: "4625", Message: "failed login"},
+		{Timestamp: base.Add(3 * time.Hour), Host: "host-a", User: "alice", EventID: "4720", Message: "user account created"},
+		{Timestamp: base.Add(4 * time.Hour), Host: "host-a", User: "alice", EventID: "4728", Message: "added to administrators"},
+		{Timestamp: base.Add(5 * time.Hour), Host: "host-a", User: "alice", EventID: "1102", Message: "audit log was cleared"},
 	}
 	if got := analyzeAdvancedCorrelation(outOfWindow); len(got) != 0 {
 		t.Fatalf("events outside the correlation window must not correlate: %#v", got)
@@ -83,5 +85,31 @@ func TestAdvancedCorrelationSkipsEventsWithoutIdentity(t *testing.T) {
 	}
 	if got := analyzeAdvancedCorrelation(events); len(got) != 0 {
 		t.Fatalf("events without a shared identity must not correlate: %#v", got)
+	}
+}
+
+func TestAdvancedCorrelationRejectsDifferentAccountsOnSameHost(t *testing.T) {
+	base := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	events := []model.Event{
+		{Timestamp: base, Host: "dc-01", User: "alice", EventID: "4625", Message: "failed login"},
+		{Timestamp: base.Add(time.Minute), Host: "dc-01", User: "bob", EventID: "4720", Message: "user account created"},
+		{Timestamp: base.Add(2 * time.Minute), Host: "dc-01", User: "bob", EventID: "4728", Message: "added to administrators"},
+		{Timestamp: base.Add(3 * time.Minute), Host: "dc-01", User: "bob", EventID: "1102", Message: "audit log was cleared"},
+	}
+	if got := analyzeAdvancedCorrelation(events); len(got) != 0 {
+		t.Fatalf("events for different accounts on one host must not form an identity chain: %#v", got)
+	}
+}
+
+func TestAdvancedCorrelationRequiresTimestampsForTimeBoundedChain(t *testing.T) {
+	base := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	events := []model.Event{
+		{Host: "dc-01", User: "alice", EventID: "4625", Message: "failed login"},
+		{Timestamp: base.Add(time.Minute), Host: "dc-01", User: "alice", EventID: "4720", Message: "user account created"},
+		{Timestamp: base.Add(2 * time.Minute), Host: "dc-01", User: "alice", EventID: "4728", Message: "added to administrators"},
+		{Timestamp: base.Add(3 * time.Minute), Host: "dc-01", User: "alice", EventID: "1102", Message: "audit log was cleared"},
+	}
+	if got := analyzeAdvancedCorrelation(events); len(got) != 0 {
+		t.Fatalf("a time-bounded chain must not include an event with an unknown timestamp: %#v", got)
 	}
 }

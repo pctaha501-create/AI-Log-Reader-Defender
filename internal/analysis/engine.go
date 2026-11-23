@@ -104,6 +104,14 @@ func AnalyzeWithOptions(events []model.Event, opts Options) model.Report {
 }
 
 func largestWindow(items []failureEvent, w time.Duration) []int {
+	// A time-window rule cannot safely include records with unknown timestamps.
+	timed := make([]failureEvent, 0, len(items))
+	for _, item := range items {
+		if !item.at.IsZero() {
+			timed = append(timed, item)
+		}
+	}
+	items = timed
 	best := []int{}
 	for left := 0; left < len(items); left++ {
 		right := left
@@ -186,12 +194,43 @@ func correlate(events []model.Event) []model.Finding {
 	}
 	for _, a := range created {
 		for _, b := range elevated {
-			if b > a && b-a <= 100 {
-				return []model.Finding{finding("correlation.account-created-then-privileged", "high", "Account creation followed by privilege change", "A user-account creation was followed by a privileged-group change within 100 events in this input. Confirm both actions and identify the actor.", []int{a, b}, []string{fmt.Sprintf("event indexes %d then %d", a, b)})}
+			if b <= a || b-a > 100 || !sameAccountContext(events[a], events[b]) {
+				continue
 			}
+			if !events[a].Timestamp.IsZero() && !events[b].Timestamp.IsZero() &&
+				(events[b].Timestamp.Before(events[a].Timestamp) || events[b].Timestamp.Sub(events[a].Timestamp) > advancedCorrelationWindow) {
+				continue
+			}
+			evidence := []string{eventEvidence(events[a]), eventEvidence(events[b])}
+			return []model.Finding{finding("correlation.account-created-then-privileged", "high", "Account creation followed by privilege change", "A newly created account was followed by a privileged-group change for the same account on the same host (when host data is available), within 100 input events. Confirm the actor and authorization.", []int{a, b}, evidence)}
 		}
 	}
 	return nil
+}
+
+func sameAccountContext(created, elevated model.Event) bool {
+	createdUser, elevatedUser := eventAccount(created), eventAccount(elevated)
+	if createdUser == "" || elevatedUser == "" || !strings.EqualFold(createdUser, elevatedUser) {
+		return false
+	}
+	createdHost, elevatedHost := strings.TrimSpace(created.Host), strings.TrimSpace(elevated.Host)
+	if createdHost == "" || elevatedHost == "" {
+		return createdHost == "" && elevatedHost == ""
+	}
+	return strings.EqualFold(createdHost, elevatedHost)
+}
+
+func eventAccount(event model.Event) string {
+	// Prefer explicit target-account fields over generic subject/actor fields.
+	for _, wanted := range []string{"targetusername", "targetuser", "targetaccountname", "targetaccount"} {
+		for key, value := range event.Raw {
+			normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, ".", ""), "_", ""))
+			if normalized == wanted && value != nil && strings.TrimSpace(fmt.Sprint(value)) != "" {
+				return strings.TrimSpace(fmt.Sprint(value))
+			}
+		}
+	}
+	return strings.TrimSpace(event.User)
 }
 
 func severityRank(s string) int {

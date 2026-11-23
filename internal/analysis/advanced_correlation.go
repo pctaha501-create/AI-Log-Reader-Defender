@@ -21,7 +21,8 @@ func analyzeAdvancedCorrelation(events []model.Event) []model.Finding {
 	byKey := make(map[string][]stagedEvent)
 	for i, event := range events {
 		stage := classifyAttackStage(event)
-		if stage == 0 {
+		if stage == 0 || event.Timestamp.IsZero() {
+			// Time-bounded chains require an actual event timestamp.
 			continue
 		}
 		for _, key := range correlationKeys(event) {
@@ -115,19 +116,17 @@ func rawEventText(raw map[string]any) string {
 }
 
 func correlationKeys(event model.Event) []string {
-	values := []struct{ kind, value string }{
-		{"host", event.Host},
-		{"user", event.User},
-		{"ip", event.SourceIP},
+	// A host or shared source IP alone is not an identity. Correlate stages
+	// only when they name the same account, scoped to the host when available.
+	user := strings.ToLower(eventAccount(event))
+	if user == "" || user == "unknown" || user == "-" {
+		return nil
 	}
-	keys := make([]string, 0, len(values))
-	for _, item := range values {
-		value := strings.ToLower(strings.TrimSpace(item.value))
-		if value != "" && value != "unknown" && value != "-" {
-			keys = append(keys, item.kind+":"+value)
-		}
+	host := strings.ToLower(strings.TrimSpace(event.Host))
+	if host != "" && host != "unknown" && host != "-" {
+		return []string{"account:" + host + ":" + user}
 	}
-	return keys
+	return []string{"account:" + user}
 }
 
 func collectOrderedStages(items []stagedEvent, wanted []int) []int {

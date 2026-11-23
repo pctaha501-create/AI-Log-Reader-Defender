@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -26,6 +27,12 @@ func readAuto(r io.Reader) ([]model.Event, error) {
 	case len(first) > 2 && first[0] == '<' && first[1] >= '0' && first[1] <= '9':
 		return readSyslog(bytes.NewReader(data))
 	case strings.HasPrefix(first, "[") || strings.HasPrefix(first, "{"):
+		// A JSON decoder accepts the first value and leaves subsequent values
+		// unread. Detect trailing JSONL records before treating an object as a
+		// complete structured document.
+		if strings.HasPrefix(first, "{") && hasTrailingJSONValue(trimmed) {
+			return ReadJSONL(bytes.NewReader(data))
+		}
 		if events, ok, err := readStructuredJSON(trimmed); ok || err != nil { return events, err }
 		if strings.HasPrefix(first, "{") { return ReadJSONL(bytes.NewReader(data)) }
 	case strings.HasPrefix(first, "<"):
@@ -42,6 +49,17 @@ func readAuto(r io.Reader) ([]model.Event, error) {
 		return readDelimited(bytes.NewReader(data), ';')
 	}
 	return readGeneric(bytes.NewReader(data))
+}
+
+// hasTrailingJSONValue reports whether a second JSON value (or malformed
+// trailing content) follows the first value. This prevents JSONL files from
+// being silently truncated to their first object by readStructuredJSON.
+func hasTrailingJSONValue(data []byte) bool {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	var first any
+	if err := dec.Decode(&first); err != nil { return false }
+	var second any
+	return dec.Decode(&second) != io.EOF
 }
 
 func looksLikeCSVHeader(line string) bool {

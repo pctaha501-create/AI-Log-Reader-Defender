@@ -28,3 +28,15 @@ func TestAutoDetectCSV(t *testing.T) {
 	if len(events) != 1 || events[0].Raw["action"] != "deny" { t.Fatalf("unexpected CSV event: %#v", events) }
 	if events[0].Raw["destination_port"] != "443" { t.Fatalf("network aliases missing: %#v", events[0].Raw) }
 }
+
+func TestAutoDetectJSONLReadsEveryRecord(t *testing.T) {
+	input := "{\"timestamp\":\"2026-11-12T09:00:00Z\",\"message\":\"one\"}\n" +
+		"{\"timestamp\":\"2026-11-12T09:01:00Z\",\"message\":\"two\"}\n" +
+		"{\"timestamp\":\"2026-11-12T09:02:00Z\",\"message\":\"three\"}\n"
+	events, err := Read(strings.NewReader(input), "auto")
+	if err != nil { t.Fatal(err) }
+	if len(events) != 3 { t.Fatalf("auto detected only %d events; want 3", len(events)) }
+	if events[0].Message != "one" || events[1].Message != "two" || events[2].Message != "three" {
+		t.Fatalf("JSONL records were not preserved in order: %#v", events)
+	}
+}

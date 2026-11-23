@@ -50,7 +50,9 @@ func analyzeAdvancedCorrelation(events []model.Event) []model.Finding {
 		})
 
 		identity := collectOrderedStages(items, []int{1, 2, 3, 4})
-		if len(identity) >= 3 {
+		// This critical chain explicitly claims audit-log clearing. Require
+		// every stage, including stage 4, rather than accepting a partial chain.
+		if len(identity) == 4 {
 			emitCorrelation(&findings, seen,
 				"correlation.identity-compromise-chain", "critical",
 				"Multi-stage identity compromise pattern",

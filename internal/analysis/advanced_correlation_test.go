@@ -27,6 +27,21 @@ func TestAdvancedCorrelationDetectsIdentityCompromiseChain(t *testing.T) {
 	}
 }
 
+func TestAdvancedCorrelationDoesNotClaimAuditClearWhenStageMissing(t *testing.T) {
+	base := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
+	events := []model.Event{
+		{Timestamp: base, Host: "home-pc", User: "sample-user", SourceIP: "203.0.113.10", EventID: "4625", Message: "An account failed to log on"},
+		{Timestamp: base.Add(5 * time.Minute), Host: "home-pc", User: "new-user", EventID: "4720", Message: "A user account was created"},
+		{Timestamp: base.Add(6 * time.Minute), Host: "home-pc", User: "new-user", EventID: "4732", Message: "A member was added to a security-enabled local group"},
+	}
+	findings := analyzeAdvancedCorrelation(events)
+	for _, finding := range findings {
+		if finding.RuleID == "correlation.identity-compromise-chain" {
+			t.Fatalf("must not claim audit-log clearing when no clear event exists: %#v", finding)
+		}
+	}
+}
+
 func TestAdvancedCorrelationDetectsDefenseEvasionAndImpact(t *testing.T) {
 	base := time.Date(2026, 1, 2, 3, 0, 0, 0, time.UTC)
 	events := []model.Event{

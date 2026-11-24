@@ -87,6 +87,7 @@ func AnalyzeWithOptions(events []model.Event, opts Options) model.Report {
 	r.Findings = append(r.Findings, correlate(events)...)
 	r.Findings = append(r.Findings, analyzeAdvancedCorrelation(events)...)
 	r.Findings = append(r.Findings, analyzeNetwork(events)...)
+	r.Findings = append(r.Findings, analyzeProcesses(events)... )
 	r.Findings = append(r.Findings, analyzeBehavior(events)...)
 	r.Findings = append(r.Findings, analyzeVendorAdapters(events)...)
 	r.Findings = append(r.Findings, analyzeGenericSecurity(events)...)

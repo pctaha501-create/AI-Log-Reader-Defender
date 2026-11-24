@@ -10,6 +10,7 @@ The executable contains its own lightweight analysis engine. It combines explain
 - Firewall policy changes, disabled protection, blocked traffic and suspected port scans.
 - Suspicious PowerShell encoded commands and download/execute patterns.
 - Suspicious use of common Windows administration binaries such as Certutil, MSHTA, Regsvr32, BITSAdmin and Rundll32.
+- Process lineage alerts for suspicious Office/browser-to-script-host execution, with optional same-host, same-PID, time-bounded correlation to Windows Filtering Platform or Sysmon network events.
 - Unusual event-volume spikes across observed time buckets.
 - A local summary with evidence references and suggested investigation steps.
 

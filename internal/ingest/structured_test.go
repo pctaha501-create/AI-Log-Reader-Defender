@@ -63,3 +63,30 @@ func TestAutoDetectDelimitedTabularLogs(t *testing.T) {
 		t.Fatalf("unexpected TSV event: %#v", events)
 	}
 }
+
+func TestAutoDetectNestedECSProcessNetworkAndAuditIdentity(t *testing.T) {
+	input := `{"@timestamp":"2026-11-24T10:00:00Z","event":{"id":"4688","action":"process-start","outcome":"success"},"host":{"name":"node-9"},"user":{"name":"operator","target":{"name":"created-account"}},"process":{"pid":4660,"name":"powershell.exe","executable":"C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe","command_line":"powershell -EncodedCommand AAAA","parent":{"pid":128,"name":"WINWORD.EXE","executable":"C:/Office/WINWORD.EXE"}},"source":{"ip":"203.0.113.7","port":50123},"destination":{"ip":"198.51.100.7","port":443},"network":{"transport":"tcp"},"vendor_extension":{"opaque_id":"keep-me"}}`
+	events, err := Read(strings.NewReader(input), "auto")
+	if err != nil { t.Fatal(err) }
+	if len(events) != 1 { t.Fatalf("got %d events, want 1", len(events)) }
+	raw := events[0].Raw
+	checks := map[string]string{
+		"process_id":"4660", "parent_process_id":"128", "process_name":"powershell.exe",
+		"parent_process_name":"WINWORD.EXE", "command_line":"powershell -EncodedCommand AAAA",
+		"actor_user":"operator", "target_user":"created-account", "source_port":"50123",
+		"destination_port":"443", "protocol":"tcp", "action":"process-start", "outcome":"success",
+	}
+	for key, want := range checks {
+		if got := strings.TrimSpace(str(raw[key])); got != want { t.Errorf("%s = %q, want %q", key, got, want) }
+	}
+	if raw["vendor_extension.opaque_id"] != "keep-me" { t.Fatalf("unknown vendor field was not preserved: %#v", raw) }
+}
+
+func TestAutoDetectTargetIdentityDoesNotOverwriteActor(t *testing.T) {
+	input := `{"event_id":"4720","subjectusername":"admin","targetusername":"new-user","host":"dc-1"}`
+	events, err := Read(strings.NewReader(input), "auto")
+	if err != nil { t.Fatal(err) }
+	if len(events) != 1 { t.Fatalf("got %d events, want 1", len(events)) }
+	if got := str(events[0].Raw["actor_user"]); got != "admin" { t.Fatalf("actor_user = %q, want admin", got) }
+	if got := str(events[0].Raw["target_user"]); got != "new-user" { t.Fatalf("target_user = %q, want new-user", got) }
+}

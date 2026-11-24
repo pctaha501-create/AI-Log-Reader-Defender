@@ -116,6 +116,21 @@ func applyCommonAliases(raw map[string]any) {
 		"destination_ip": {"destination.ip", "server.ip", "dst.ip", "dst_ip", "dstip", "destinationip", "remote_ip", "server_ip"},
 		"message": {"event.original", "event.message", "renderinginfo.message", "eventmessage", "rendereddescription", "description", "msg", "message_text", "event_description"},
 		"level": {"log.level", "event.severity", "winlog.level", "severity", "priority", "log_level", "loglevel", "levelname"},
+		// Keep actor and target identities separate. A single generic user field
+		// is not sufficient for audit events where the initiator modifies another account.
+		"actor_user": {"user.name", "user.effective.name", "user.domain", "winlog.event_data.subjectusername", "subjectusername", "subject_user", "actor.name", "actor.user.name", "initiated_by", "initiator"},
+		"target_user": {"user.target.name", "winlog.event_data.targetusername", "targetusername", "target_user", "targetaccountname", "membername", "object_user"},
+		"process_id": {"process.pid", "process.entity_id", "processid", "newprocessid", "pid", "process_id"},
+		"parent_process_id": {"process.parent.pid", "parentprocessid", "creatorprocessid", "ppid", "parent_process_id"},
+		"process_name": {"process.name", "process.executable", "process.image", "newprocessname", "image", "executable", "processname"},
+		"parent_process_name": {"process.parent.name", "process.parent.executable", "process.parent.image", "parentprocessname", "parentimage", "creatorprocessname"},
+		"command_line": {"process.command_line", "process.args", "commandline", "processcommandline", "cmdline"},
+		"source_port": {"source.port", "client.port", "src.port", "srcport", "src_port", "sourceport", "spt"},
+		"destination_port": {"destination.port", "server.port", "dst.port", "dstport", "dst_port", "destinationport", "dport", "dpt"},
+		"protocol": {"network.transport", "network.protocol", "protocol", "proto"},
+		"action": {"event.action", "event.type", "rule.name", "action", "act", "disposition"},
+		"outcome": {"event.outcome", "event.result", "outcome", "result", "status"},
+		"resource": {"cloud.resource.name", "resource.name", "resource_id", "resourceid", "objectname", "object_name", "targetresource"},
 	}
 	for target, keys := range aliases {
 		if strings.TrimSpace(str(raw[target])) != "" {
